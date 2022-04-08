@@ -3,49 +3,77 @@
 Один служебный для взаимодействия машин между собой (внутренний), другой для доступа в сеть Интернет (внешний).
 2. Внешний интерфейс будет использовать виртуальный сетевой адрес. На период конфигурации серверов машины имеют два различных адреса.
 3. Начальная сетевая конфигурация имеет следующий вид:
-PGSQL-1 
+
+PGSQL-1
+```
 ens33 (внешний)
 ip-адрес: 192.168.1.124/24
 gateway: 192.168.1.1
 ens35 (служебный)
 ip-адрес: 192.168.2.11/24
-
+```
 PGSQL-2
+```
 ens33 (внешний)
 ip-адрес: 192.168.1.65/24
 gateway: 192.168.1.1
 ens35 (служебный)
 ip-адрес: 192.168.2.12/24
+```
 
 # Установка пакетов
-1. apt install net-tools
-2. apt install postgresql
+Пакеты сетевых инструментов
+```
+apt install net-tools
+```
+Пакеты для установки postgresql
+```
+apt install postgresql
+```
 
-# Настройка PostgreSQL(primary)
-1.Создание пользователя для репликации БД: su - postgres -с "createuser -U postgres repuser -P -c 5 --replication"
-2.
+# Настройка PostgreSQL(HA_primary)
+1. Создание пользователя для репликации БД 
+```
+su - postgres -с "createuser -U postgres repuser -P -c 5 --replication"
+```
+2. Настройка файла pg_hba.conf
+```
 host replication repuser 192.168.2.11/32 trust
 host replication repuser 192.168.2.12/32 trust
 host all postgres 192.168.1.113/32 trust
-3.
+```
+3. Настройка в файле postgresql.conf
+```
 listen_addresses = '*'
+```
 
-# Настройка PostgreSQL(standby)
-1.
+# Настройка PostgreSQL(HA_standby)
+1. Настройка файла pg_hba.conf
+```
 host replication repuser 192.168.2.11/32 trust
 host replication repuser 192.168.2.12/32 trust
 host all postgres 192.168.1.113/32 trust
-2.
+```
+2. Переименование каталога
+```
 mv /var/lib/postgresql/11/main/ /var/lib/postgresql/11/main_old/
-3.
+```
+3. Остановка службы postgresql
+```
 systemctl stop postgresql
-4.
+```
+4. Репликация каталога main с PGSQL-1-сервера на PGSQL-2-сервер
+```
 su - postgres -c "pg_basebackup -h 192.168.2.11 -D /var/lib/postgresql/11/main/ -U repuser -w --wal-method=stream
-5.
+```
+5. Запуск службы postgresql
+```
 systemctl start postgresql
+```
 
 # Написание скриптов
-1.
+1. Скрипт для PGSQL-2-сервера
+```
 #!/bin/bash
 
 #ps - переменная статуса postgresql на дополнительном сервере БД (1 - вкл, 0 - выкл)
@@ -97,8 +125,9 @@ case $sum in
 	systemctl stop postgresql; ifconfig ens33 down; 
 	echo "$(date) Primary alive, shutting down reserve... (event 11)">> /var/log/HA_slave.log; exit 0;;
 esac
-
-2.
+```
+2. Скрипт для PGSQL-1-сервера
+```
 #!/bin/bash
 
 #Значения параметров
@@ -147,16 +176,29 @@ case $sum in
 	11)
 	echo "$(date) Primary alive, waiting... (event 11)" >> /var/log/HA_master.log;exit 0;;
 esac
-
+```
 # Настройка расписания запуска скриптов в crontab
-1. cp /root/HA_primary.sh /usr/local/bin/HA_primary
-2. cp /root/HA_standby.sh /usr/local/bin/HA_standby
-3. /etc/crontab: * * * * * root /usr/local/bin/HA_primary
-4. /etc/crontab: * * * * * root /usr/local/bin/HA_standby
+1. Копирование файла HA_primary.sh в каталог /usr/local/bin/ для простоты активации скрипта
+```
+cp /root/HA_primary.sh /usr/local/bin/HA_primary
+```
+2. Копирование файла HA_standby.sh в каталог /usr/local/bin/ для простоты активации скрипта 
+```
+cp /root/HA_standby.sh /usr/local/bin/HA_standby
+```
+3. Настройка расписание запуска скрипта 
+```
+/etc/crontab: * * * * * root /usr/local/bin/HA_primary
+```
+4. Настройка расписание запуска скрипта 
+```
+/etc/crontab: * * * * * root /usr/local/bin/HA_standby
+```
 
-# Проверка
+# Проверка скриптом
 
-1.
+1. Скрипт для проверки работы
+```
 import time
 from _datetime import datetime
 import psycopg2
@@ -191,3 +233,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+```
